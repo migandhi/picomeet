@@ -49,7 +49,6 @@ SQLite file**, comfortably running a real business on a **1 GB RAM / 1 vCPU** dr
 | 📱 | Works on desktop Chrome/Edge/Firefox/Safari and mobile browsers. Nothing to install. |
 ---
 ## Architecture
-
 ┌───────────────────────────── Your 1 GB Droplet ─────────────────────────────┐
 │                                                                              │
 │   Caddy  ──►  Node.js (single process, 2 deps)                               │
@@ -67,58 +66,55 @@ SQLite file**, comfortably running a real business on a **1 GB RAM / 1 vCPU** dr
 │ Browser │ ◄════ VIDEO / AUDIO / SCREEN / INK ════► │ Browser │
 │  (peer) │        DTLS-SRTP, end-to-end             │  (peer) │
 └─────────┘                                          └─────────┘
-
-**The Adaptive Mesh Governor** (`server/signaling.js`) is PicoMeet's core invention.
-On every join/leave/mode-change the server recomputes a *quality contract*:
-| Participants | Resolution | FPS | Bitrate/stream | Approx. uplink per person |
-|---|---|---|---|---|
-| 2 | 1280×720 | 30 | 1400 kbps | 1.4 Mbps |
-| 3–4 | 960×540 | 25 | 800 kbps | 2.4–3.2 Mbps |
-| 5–6 | 640×360 | 20 | 450 kbps | 1.8–2.3 Mbps |
-| 7–9 | 480×270 | 15 | 280 kbps | 1.7–2.2 Mbps |
-| 10–12 | 320×180 | 12 | 160 kbps | 1.4–1.8 Mbps |
-| 13+ | auto **Lecture Mode** — only stage peers publish | | | |
-Every browser must honour the contract (`setParameters` + `applyConstraints`), and a
-**client-side watchdog** (`quality.js`) may step *further down* if it detects
-bandwidth/CPU limitation. Quality never oscillates: degradation is fast, recovery is slow.
-**Silent Peers** — in Lecture Mode, participants who are not on stage open **zero
-PeerConnections**. They receive the teacher's stream and nothing else. This is why a
-30-student lecture costs a student's laptop the same as a 3-person chat.
+The Adaptive Mesh Governor (`server/signaling.js`) is PicoMeet's core invention.
+On every join/leave/mode-change the server recomputes a quality contract:
+Participants	Resolution	FPS	Bitrate/stream	Approx. uplink per person
+2	1280×720	30	1400 kbps	1.4 Mbps
+3–4	960×540	25	800 kbps	2.4–3.2 Mbps
+5–6	640×360	20	450 kbps	1.8–2.3 Mbps
+7–9	480×270	15	280 kbps	1.7–2.2 Mbps
+10–12	320×180	12	160 kbps	1.4–1.8 Mbps
+13+	auto Lecture Mode — only stage peers publish			
+Every browser must honour the contract (`setParameters` + `applyConstraints`), and a				
+client-side watchdog (`quality.js`) may step further down if it detects				
+bandwidth/CPU limitation. Quality never oscillates: degradation is fast, recovery is slow.				
+Silent Peers — in Lecture Mode, participants who are not on stage open **zero				
+PeerConnections**. They receive the teacher's stream and nothing else. This is why a				
+30-student lecture costs a student's laptop the same as a 3-person chat.				
 ---
-## Requirements
-* A DigitalOcean droplet (or any VPS) with **Ubuntu 22.04 or 24.04**, 1 GB RAM, 1 vCPU
-* A domain or subdomain pointing at the droplet's IP
-* **HTTPS is mandatory** — browsers refuse camera/microphone access on plain HTTP
-  (except on `localhost`). The installer handles TLS for you.
+Requirements
+A DigitalOcean droplet (or any VPS) with Ubuntu 22.04 or 24.04, 1 GB RAM, 1 vCPU
+A domain or subdomain pointing at the droplet's IP
+HTTPS is mandatory — browsers refuse camera/microphone access on plain HTTP
+(except on `localhost`). The installer handles TLS for you.
 ---
-## Step 1 — Get a free subdomain and point it at your droplet
-You do **not** need to buy a domain. Any of these work:
-| Provider | What you get | Notes |
-|---|---|---|
-| **ClouDNS** (`cloudns.ch`, `cloudns.cl`, …) | `yourname.cloudns.ch` | Free DNS-hosted subdomain, full A-record control |
-| **eu.org** | `yourname.eu.org` | Free permanent domain; approval takes days |
-| **DuckDNS** | `yourname.duckdns.org` | Instant, ideal for testing |
-| **Afraid FreeDNS** | thousands of shared domains | Instant |
-| **nip.io / sslip.io** | `1-2-3-4.nip.io` | Zero setup; works for a quick trial |
-### Creating the record (ClouDNS example)
-1. Sign up at **cloudns.net → Free DNS**.
-2. **Create zone → Free subdomain** and pick e.g. `myschool.cloudns.ch`.
-3. Inside the zone, **Add new record**:
-   * Type: **A**
-   * Host: leave blank (or `meet` to get `meet.myschool.cloudns.ch`)
-   * Points to: **your droplet's public IPv4**
-   * TTL: 5 minutes
-4. Optionally add an **AAAA** record for your IPv6 address.
-5. Wait 1–5 minutes, then verify from your laptop:
-   ```bash
+Step 1 — Get a free subdomain and point it at your droplet
+You do not need to buy a domain. Any of these work:
+Provider	What you get	Notes
+ClouDNS (`cloudns.ch`, `cloudns.cl`, …)	`yourname.cloudns.ch`	Free DNS-hosted subdomain, full A-record control
+eu.org	`yourname.eu.org`	Free permanent domain; approval takes days
+DuckDNS	`yourname.duckdns.org`	Instant, ideal for testing
+Afraid FreeDNS	thousands of shared domains	Instant
+nip.io / sslip.io	`1-2-3-4.nip.io`	Zero setup; works for a quick trial
+Creating the record (ClouDNS example)
+Sign up at cloudns.net → Free DNS.
+Create zone → Free subdomain and pick e.g. `myschool.cloudns.ch`.
+Inside the zone, Add new record:
+Type: A
+Host: leave blank (or `meet` to get `meet.myschool.cloudns.ch`)
+Points to: your droplet's public IPv4
+TTL: 5 minutes
+Optionally add an AAAA record for your IPv6 address.
+Wait 1–5 minutes, then verify from your laptop:
+```bash
    dig +short meet.myschool.cloudns.ch
    ```
-   It must print your droplet's IP.
+It must print your droplet's IP.
 > **Cloudflare users:** if you proxy the domain (orange cloud), WebSockets still work,
 > but you **must not** proxy the TURN hostname — TURN needs a direct UDP path.
 > Use a second, grey-clouded record such as `turn.yourdomain` for coturn.
 ---
-## Step 2 — Install (4 minutes)
+Step 2 — Install (4 minutes)
 SSH into your fresh droplet as root and run:
 ```bash
 git clone https://github.com/YOURNAME/picomeet.git
