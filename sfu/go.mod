@@ -1,4 +1,4 @@
-module github.com/YOURNAME/picomeet/sfu
+module github.com/migandhi/picomeet/sfu
 
 go 1.22
 
