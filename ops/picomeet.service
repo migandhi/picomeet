@@ -1,0 +1,31 @@
+[Unit]
+Description=PicoMeet signalling + web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=picomeet
+Group=picomeet
+WorkingDirectory=/opt/picomeet
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --max-old-space-size=192 /opt/picomeet/server/index.js
+Restart=always
+RestartSec=3
+MemoryMax=420M
+MemoryHigh=340M
+TasksMax=256
+LimitNOFILE=8192
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/opt/picomeet/data
+StandardOutput=append:/var/log/picomeet.log
+StandardError=append:/var/log/picomeet.log
+
+[Install]
+WantedBy=multi-user.target

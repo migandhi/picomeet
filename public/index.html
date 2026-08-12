@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>PicoMeet</title>
+<link rel="stylesheet" href="/css/app.css"></head><body>
+<div class="gate"><div class="card">
+  <h1 class="logo">Pico<span>Meet</span></h1>
+  <p class="muted">Private, peer-to-peer classrooms. Your video never touches a server.</p>
+  <label>Meeting code<input id="code" placeholder="abc-def-ghi" autocomplete="off"></label>
+  <button class="primary" id="go">Join</button>
+  <p style="margin-top:14px"><a href="/login.html" style="color:var(--acc)">Host sign in →</a></p>
+</div></div>
+<script>
+  const go=()=>{const c=document.getElementById('code').value.trim().toLowerCase();
+    if(c) location.href='/j/'+encodeURIComponent(c);};
+  document.getElementById('go').onclick=go;
+  document.getElementById('code').addEventListener('keydown',e=>e.key==='Enter'&&go());
+</script></body></html>

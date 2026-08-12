@@ -1,0 +1,20 @@
+{
+  "name": "picomeet",
+  "version": "1.0.0",
+  "description": "Ultra-lean self-hosted P2P video classroom. 2 dependencies. 70MB RAM.",
+  "type": "commonjs",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node --max-old-space-size=192 server/index.js",
+    "dev": "node --watch server/index.js",
+    "cli": "node server/cli.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "ws": "^8.18.0"
+  },
+  "license": "AGPL-3.0-or-later"
+}

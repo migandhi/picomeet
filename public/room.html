@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PicoMeet</title>
+<link rel="icon" href="/assets/favicon.svg">
+<link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="room">
+<!-- ------------------------- Pre-join / lobby ------------------------- -->
+<div id="gate" class="gate">
+  <div class="card">
+    <h1 class="logo">Pico<span>Meet</span></h1>
+    <p id="gate-room" class="muted">Loading meeting…</p>
+    <label>Your name<input id="g-name" maxlength="32" placeholder="e.g. Aisha" autocomplete="name"></label>
+    <label id="pin-wrap" hidden>Meeting PIN<input id="g-pin" inputmode="numeric" maxlength="8"></label>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="g-cam" checked> Camera</label>
+      <label class="chk"><input type="checkbox" id="g-mic" checked> Microphone</label>
+    </div>
+    <video id="g-preview" autoplay muted playsinline></video>
+    <button id="g-join" class="primary">Join meeting</button>
+    <p id="gate-msg" class="err"></p>
+  </div>
+</div>
+<!-- ------------------------------ Stage ------------------------------- -->
+<main id="stage">
+  <div id="grid" class="grid"></div>
+  <!-- Spotlight / screen-share surface with annotation overlay -->
+  <div id="focus" class="focus" hidden>
+    <video id="focus-video" autoplay playsinline></video>
+    <canvas id="ink"></canvas>
+    <div id="focus-label" class="label"></div>
+    <button id="focus-close" class="ghost tiny">Exit</button>
+  </div>
+  <!-- Whiteboard surface (same ink engine, blank background) -->
+  <div id="whiteboard" class="focus wb" hidden>
+    <canvas id="wb-ink"></canvas>
+    <div class="label">Shared whiteboard</div>
+  </div>
+</main>
+<!-- ------------------------------ Toolbar ------------------------------ -->
+<footer id="bar" class="bar">
+  <button id="b-mic"  class="tool" title="Mute (M)">🎙<span>Mic</span></button>
+  <button id="b-cam"  class="tool" title="Camera (V)">📷<span>Cam</span></button>
+  <button id="b-share" class="tool" title="Share screen">🖥<span>Share</span></button>
+  <button id="b-draw" class="tool" title="Annotate">✏️<span>Draw</span></button>
+  <button id="b-wb"   class="tool" title="Whiteboard">⬜<span>Board</span></button>
+  <button id="b-hand" class="tool" title="Raise hand">✋<span>Hand</span></button>
+  <button id="b-chat" class="tool" title="Chat">💬<span>Chat</span></button>
+  <button id="b-people" class="tool" title="Participants">👥<span id="b-count">1</span></button>
+  <button id="b-host" class="tool" hidden>🛡<span>Host</span></button>
+  <button id="b-leave" class="tool danger" title="Leave">⏻<span>Leave</span></button>
+</footer>
+<!-- Ink palette -->
+<div id="palette" class="palette" hidden>
+  <button data-tool="pen" class="on">✏️</button>
+  <button data-tool="marker">🖍</button>
+  <button data-tool="arrow">➔</button>
+  <button data-tool="rect">▭</button>
+  <button data-tool="eraser">🧽</button>
+  <input type="color" id="ink-color" value="#ff3b30">
+  <input type="range" id="ink-width" min="1" max="12" value="3">
+  <button id="ink-undo">↶</button>
+  <button id="ink-clear">🗑</button>
+</div>
+<!-- Side panels -->
+<aside id="panel" class="panel" hidden>
+  <header><span id="panel-title"></span><button id="panel-close" class="ghost tiny">✕</button></header>
+  <div id="panel-body"></div>
+  <form id="chat-form" hidden><input id="chat-in" placeholder="Message everyone…" maxlength="800"><button>➤</button></form>
+</aside>
+<div id="toasts" class="toasts"></div>
+<div id="hud" class="hud"></div>
+<script type="module" src="/js/room.js"></script>
+</body>
+</html>

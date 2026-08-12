@@ -1,0 +1,27 @@
+{
+    # Optional: email you@example.com
+    servers {
+        timeouts {
+            read_body 10s
+            idle 10m
+        }
+    }
+}
+
+meet.example.com {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(self), microphone=(self), display-capture=(self), geolocation=()"
+        -Server
+    }
+
+    reverse_proxy 127.0.0.1:8080 {
+        flush_interval -1
+        header_up X-Forwarded-For {remote_host}
+    }
+}

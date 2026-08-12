@@ -1,0 +1,25 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin · PicoMeet</title>
+<link rel="stylesheet" href="/css/app.css">
+<style>body{overflow:auto;padding:20px}table{width:100%;border-collapse:collapse;font-size:13px}
+td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
+.new{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}</style></head>
+<body>
+<h1 class="logo">Pico<span>Meet</span> admin</h1>
+<section><h3>Server</h3><p id="stats" class="muted"></p></section>
+<section><h3>Live meetings</h3><div id="live"></div></section>
+<section><h3>Create account</h3>
+  <div class="new">
+    <input id="nu" placeholder="username"><input id="nn" placeholder="display name">
+    <input id="np" placeholder="password (8+)" type="text">
+    <select id="nr"><option value="host">host</option><option value="user">user</option><option value="admin">admin</option></select>
+    <input id="nmr" value="1" title="simultaneous meetings"><input id="nmp" value="8" title="max participants">
+    <input id="nmm" value="0" title="max minutes (0=unlimited)">
+    <button class="primary" id="create" style="margin:0">Create</button>
+  </div>
+  <p class="muted" style="font-size:12px">Columns: simultaneous meetings · max participants/room · max minutes/meeting</p>
+</section>
+<section><h3>Accounts</h3><table><thead><tr><th>User</th><th>Name</th><th>Role</th><th>Mtgs</th><th>Seats</th>
+<th>Mins</th><th>Expires</th><th>On</th><th></th></tr></thead><tbody id="users"></tbody></table></section>
+<script type="module" src="/js/admin.js"></script></body></html>

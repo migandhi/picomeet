@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · PicoMeet</title>
+<link rel="stylesheet" href="/css/app.css"></head><body>
+<div class="gate"><div class="card">
+  <h1 class="logo">Pico<span>Meet</span></h1>
+  <label>Username<input id="u" autocomplete="username"></label>
+  <label>Password<input id="p" type="password" autocomplete="current-password"></label>
+  <button class="primary" id="go">Sign in</button>
+  <p class="err" id="e"></p>
+</div></div>
+<script>
+document.getElementById('go').onclick=async()=>{
+  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:u.value,password:p.value})});
+  const j=await r.json();
+  if(j.error) return document.getElementById('e').textContent=j.error;
+  location.href = j.user.role==='admin' ? '/admin.html' : '/dashboard.html';
+};
+document.getElementById('p').addEventListener('keydown',e=>e.key==='Enter'&&go.click());
+</script></body></html>
