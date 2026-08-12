@@ -9,7 +9,7 @@ Install Node.js 18+ (the project was designed around Node 20 for deployment).
 ## 2. Clone
 
 ```powershell
-git clone https://github.com/YOURNAME/picomeet.git
+git clone https://github.com/migandhi/picomeet.git
 cd picomeet
 ```
 
