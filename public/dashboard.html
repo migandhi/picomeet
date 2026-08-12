@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dashboard · PicoMeet</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { overflow: auto; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td, th { border-bottom: 1px solid var(--line); padding: 10px; text-align: left; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 14px 0; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .badge-live { background: var(--dan); color: #fff; padding: 2px 6px; border-radius: 6px; font-size: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="logo">Pico<span>Meet</span></h1>
+    <button id="logout" class="ghost tiny">Sign out</button>
+  </div>
+
+  <section>
+    <h3>Welcome, <span id="u-name"></span></h3>
+    <p class="muted" style="font-size: 13px; margin-top: 5px;">
+      Role: <b id="u-role" style="text-transform: capitalize;"></b> &nbsp;·&nbsp;
+      Rooms allowed: <b id="u-max-rooms"></b> &nbsp;·&nbsp;
+      Max participants per room: <b id="u-max-p"></b>
+    </p>
+  </section>
+
+  <section>
+    <h3>Create a new room</h3>
+    <div class="controls">
+      <input id="r-name" placeholder="Room name (e.g. Math 101)" style="flex: 1; min-width: 200px;">
+      <select id="r-mode" style="width: auto;">
+        <option value="auto">Auto (Mesh → Lecture)</option>
+        <option value="seminar">Seminar (Everyone speaks)</option>
+        <option value="lecture">Lecture (Only stage speaks)</option>
+      </select>
+      <label class="chk" style="margin: 0;"><input type="checkbox" id="r-guest" checked> Guests OK</label>
+      <button id="r-create" class="primary" style="margin: 0; width: auto; padding: 10px 20px;">Create Room</button>
+    </div>
+    <p id="r-err" class="err"></p>
+  </section>
+
+  <section>
+    <h3>My Rooms</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Room Name</th>
+          <th>Meeting Code</th>
+          <th>Mode</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="rooms"></tbody>
+    </table>
+  </section>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    const api = (u, m, b) => fetch(u, { 
+      method: m || 'GET', 
+      headers: { 'Content-Type': 'application/json' },
+      body: b ? JSON.stringify(b) : undefined 
+    }).then(r => r.json());
+
+    // Load user profile and rooms
+    async function load() {
+      const data = await api('/api/me');
+      if (data.error) return location.href = '/login.html'; // Redirect if not logged in
+      
+      const u = data.user;
+      $('#u-name').textContent = u.name;
+      $('#u-role').textContent = u.role;
+      $('#u-max-rooms').textContent = u.maxRooms;
+      $('#u-max-p').textContent = u.maxParticipants;
+
+      // Render rooms table
+      $('#rooms').innerHTML = data.rooms.map(r => `
+        <tr>
+          <td>
+            <b>${r.name}</b> 
+            ${r.live > 0 ? `<span class="badge-live">${r.live} LIVE</span>` : ''}
+          </td>
+          <td><code>${r.code}</code></td>
+          <td style="text-transform: capitalize;">${r.mode}</td>
+          <td>
+            <button class="mini" onclick="window.open('/j/${r.code}', '_blank')">Join</button>
+            <button class="mini" onclick="navigator.clipboard.writeText('${location.origin}/j/${r.code}'); alert('Invite link copied!');">Copy Link</button>
+            <button class="mini" data-del="${r.code}">✕ Delete</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="4" class="muted">You have no rooms yet. Create one above.</td></tr>';
+
+      // Bind delete buttons
+      document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+        if (confirm('Delete meeting room ' + b.dataset.del + '?')) {
+          await api('/api/rooms/' + b.dataset.del, 'DELETE');
+          load(); // Refresh table
+        }
+      });
+    }
+
+    // Create Room Logic
+    $('#r-create').onclick = async () => {
+      $('#r-err').textContent = '';
+      const name = $('#r-name').value.trim();
+      if (!name) return $('#r-err').textContent = 'Please enter a room name.';
+      
+      const res = await api('/api/rooms', 'POST', {
+        name: name,
+        mode: $('#r-mode').value,
+        guestOk: $('#r-guest').checked
+      });
+
+      if (res.error) return $('#r-err').textContent = res.error;
+      $('#r-name').value = ''; // Clear input on success
+      load(); // Refresh table
+    };
+
+    // Logout Logic
+    $('#logout').onclick = async () => {
+      await api('/api/logout', 'POST');
+      location.href = '/login.html';
+    };
+
+    // Initial load
+    load();
+  </script>
+</body>
+</html>
