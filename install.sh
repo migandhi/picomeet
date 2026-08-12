@@ -10,7 +10,7 @@ APP=picomeet
 APP_DIR=/opt/$APP
 APP_USER=$APP
 NODE_MAJOR=20
-REPO_URL="${PM_REPO:-https://github.com/YOURNAME/picomeet.git}"
+REPO_URL="${PM_REPO:-https://github.com/migandhi/picomeet.git}"
 DOMAIN=""; EMAIL=""; ADMIN_USER="admin"; ADMIN_PASS=""; WITH_TURN=0; NO_TLS=0; BRANCH=main
 C_G='\033[1;32m'; C_Y='\033[1;33m'; C_R='\033[1;31m'; C_B='\033[1;36m'; C_0='\033[0m'
 say()  { echo -e "${C_G}==>${C_0} $*"; }
