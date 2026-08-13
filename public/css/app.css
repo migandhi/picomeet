@@ -1,4 +1,5 @@
 :root{--bg:#0e1116;--panel:#161b22;--line:#252c37;--fg:#e6edf3;--mut:#8b949e;--acc:#3fb950;--dan:#f85149}
+[hidden] { display: none !important; }
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--fg);overflow:hidden}
 button{font:inherit;cursor:pointer}
