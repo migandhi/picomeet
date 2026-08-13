@@ -69,3 +69,27 @@ input,select{background:#0d1117;border:1px solid var(--line);color:var(--fg);bor
 .hud{position:fixed;top:10px;right:12px;font-size:11px;color:var(--mut);z-index:30}
 body.lecture .grid{--cols:1}
 @media(max-width:640px){.tool{min-width:52px;font-size:17px}.grid{--cols:1!important}}
+
+/* Mobile UI Fixes for Android/iOS */
+@media (max-width: 768px) {
+  /* Force horizontal scrolling on the toolbar */
+  #bar, .bar, #tools, .tools, .controls, footer {
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    -webkit-overflow-scrolling: touch; /* Enables smooth swiping */
+    padding-bottom: 8px !important;
+  }
+  
+  /* Prevent the buttons from squishing together */
+  #bar button, .bar button, #tools button, .tools button, .controls button {
+    flex-shrink: 0 !important;
+    margin-right: 10px !important;
+  }
+  
+  /* Hide the ugly scrollbar for a native app feel */
+  #bar::-webkit-scrollbar, .bar::-webkit-scrollbar, #tools::-webkit-scrollbar, .controls::-webkit-scrollbar {
+    display: none;
+  }
+}
