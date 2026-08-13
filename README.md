@@ -322,36 +322,16 @@ A registered Domain Name (e.g., meet.yourdomain.com).
 DNS A Records pointing your domain (and optionally a turn. subdomain) to your server's public IPv4 address.
 
 Root or sudo privileges on your server.
-
-2. Running the Installer
-Log into your server via SSH and execute the one-line installer:
-
 ```bash
-
-curl -fsSL https://raw.githubusercontent.com/migandhi/picomeet/main/install.sh | sudo bash
-
+sudo bash install.sh \
+  --domain meet.example.com \
+  --email admin@example.com \
+  --user admin \
+  --pass 'SuperSecretPass123!' \
+  --with-turn
 ```
 
-3. What to Expect During Setup (Interactive Prompts)
-The setup script will guide you through the configuration process. Have the following information ready:
-
-Domain Name: You will be prompted to enter the domain you mapped in your DNS settings (e.g., meet.example.com). This is required to configure the Caddy web server and automatically provision a free SSL certificate.
-
-Admin Email (Let's Encrypt): The script will ask for an email address. This is strictly used by the Certificate Authority to notify you of SSL expirations or critical security updates.
-
-Master Admin Credentials: You will be asked to create the primary account used to access the dashboard:
-
-Admin Username
-
-Admin Password (Ensure this is at least 8 characters)
-
-WebRTC Configuration (STUN / TURN):
-
-STUN: The script defaults to lightweight public STUN servers (like Google or Cloudflare) for basic IP discovery.
-
-TURN: To ensure video connections successfully punch through strict corporate firewalls, you will be prompted to configure a TURN relay. You can either allow the script to install and configure a local instance of coturn automatically, or you can input the credentials (URL, Username, Password) of an external third-party TURN provider.
-
-4. Post-Installation & First Login
+2. Post-Installation & First Login
 Once the script finishes executing, all required services will automatically start in the background.
 
 Open your web browser and navigate to your domain (e.g., [https://meet.yourdomain.com/login.html](https://meet.yourdomain.com/login.html)).
