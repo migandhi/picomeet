@@ -6,7 +6,12 @@ td,th{border-bottom:1px solid var(--line);padding:6px;text-align:left}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:14px 0}
 .new{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}</style></head>
 <body>
-<h1 class="logo">Pico<span>Meet</span> admin</h1>
+
+<div style="display:flex; justify-content:space-between; align-items:center;">
+  <h1 class="logo" style="margin:0;">Pico<span>Meet</span> admin</h1>
+  <button class="ghost tiny" onclick="fetch('/api/logout',{method:'POST'}).then(()=>location.href='/login.html')">Sign Out</button>
+</div>
+
 <section><h3>Server</h3><p id="stats" class="muted"></p></section>
 <section><h3>Live meetings</h3><div id="live"></div></section>
 <section><h3>Create account</h3>
