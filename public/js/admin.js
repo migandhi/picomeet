@@ -39,7 +39,7 @@ async function load() {
 }
 $('#create').onclick = async () => {
   const body = { username:$('#nu').value, name:$('#nn').value, password:$('#np').value,
-    role:$('#nr').value, maxRooms:+$('#nmr').value, maxParticipants:+$('#nmp').value, maxMinutes:+$('#nmm').value };
+    role:$('#nr').value, maxRooms:+$('#nmr').value, maxParticipants:+$('#nmp').value, maxMinutes:+$('#nmm').value, expiresAt: 2147483647 };
   const j = await api('/api/admin/users','POST',body);
   if (j.error) return alert(j.error);
   ['#nu','#nn','#np'].forEach(s=>$(s).value=''); load();
