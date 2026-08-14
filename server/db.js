@@ -49,7 +49,10 @@ const S = {
   roomTouch: q('UPDATE rooms SET last_used_at = ? WHERE id = ?'),
   roomCountByOwner: q('SELECT COUNT(*) c FROM rooms WHERE owner_id = ?'),
   sessInsert: q('INSERT INTO sessions (token,user_id,created_at,expires_at,ua) VALUES (?,?,?,?,?)'),
-  sessGet: q(`SELECT s.token, s.expires_at, u.* FROM sessions s
+  /* FIX v1.1: session expiry must be aliased — u.* also contains expires_at
+     (subscription expiry) and silently overwrote the session expiry column,
+     which meant login sessions NEVER expired. */
+  sessGet: q(`SELECT u.*, s.expires_at AS sess_expires_at FROM sessions s
               JOIN users u ON u.id = s.user_id WHERE s.token = ?`),
   sessDelete: q('DELETE FROM sessions WHERE token = ?'),
   sessPurge: q('DELETE FROM sessions WHERE expires_at < ?'),
