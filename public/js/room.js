@@ -1,6 +1,8 @@
 import { Mesh } from './mesh.js';
 import { QualityGovernor } from './quality.js';
 import { Board } from './board.js';
+import { Recorder } from './recorder.js';
+
 const $ = s => document.querySelector(s);
 const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 const code = new URLSearchParams(location.search).get('r') || '';
