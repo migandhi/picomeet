@@ -93,3 +93,9 @@ body.lecture .grid{--cols:1}
     display: none;
   }
 }
+
+/* recording indicator */
+.tool.recing{color:var(--dan)}
+.tool.recing::before{content:'';position:absolute;top:5px;right:12px;width:8px;height:8px;
+  border-radius:50%;background:var(--dan);animation:pm-blink 1.1s infinite}
+@keyframes pm-blink{50%{opacity:.15}}
