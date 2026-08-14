@@ -273,7 +273,7 @@ ufw --force enable >/dev/null
 # ------------------------------ daily backup -------------------------------
 say "Scheduling daily database backup (03:17, keeps last 7) ..."
 chmod +x $APP_DIR/ops/backup.sh 2>/dev/null || true
-( crontab -l 2>/dev/null | grep -v 'picomeet/ops/backup.sh' ;
+( crontab -l 2>/dev/null | grep -v 'picomeet/ops/backup.sh' || true ;
   echo "17 3 * * * /usr/bin/bash $APP_DIR/ops/backup.sh >/dev/null 2>&1" ) | crontab -
 # ------------------------------ helper command -----------------------------
 cat > /usr/local/bin/$APP <<EOF
