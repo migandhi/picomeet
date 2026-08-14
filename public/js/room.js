@@ -12,7 +12,7 @@ const S = {
   local: null, camTrack: null, screenTrack: null,
   mic: true, cam: true, sharing: false, hand: false,
   ink: null, wb: null, drawing: false, focusId: null, wbOpen: false,
-  chat: [], unread: 0
+  chat: [], unread: 0, rec: null
 };
 /* ============================== bootstrap ============================== */
 (async function boot() {
@@ -88,6 +88,7 @@ function onMessage(m) {
       (m.chat || []).forEach(c => pushChat(c, true));
       initBoards(); bindUI(); pushState();
       if (S.self.role !== 'guest') $('#b-host').hidden = false;
+      if (S.self.role !== 'guest' && Recorder.supported()) $('#b-rec').hidden = false;
       toast(`Joined “${m.room.name}”. Share: ${location.origin}/j/${m.room.code}`, 7000);
       return;
     }
@@ -332,6 +333,7 @@ function bindUI() {
   $('#b-mic').onclick = () => { S.mic = !S.mic; applyTracks(); pushState(); };
   $('#b-cam').onclick = () => { S.cam = !S.cam; applyTracks(); pushState(); };
   $('#b-share').onclick = toggleShare;
+  $('#b-rec').onclick = toggleRecord;
   $('#b-hand').onclick = () => { S.hand = !S.hand; pushState(); syncButtons(); if (S.hand) wsend({ t: 'react', e: '✋' }); };
   $('#b-draw').onclick = () => setDraw(!S.drawing);
   $('#b-wb').onclick = () => {
@@ -341,7 +343,10 @@ function bindUI() {
   $('#b-chat').onclick = () => panel('chat', 'Chat');
   $('#b-people').onclick = () => panel('people', 'Participants');
   $('#b-host').onclick = () => panel('people', 'Host controls');
-  $('#b-leave').onclick = () => { S.ws.close(); S.mesh.destroy(); location.href = '/'; };
+  $('#b-leave').onclick = () => {
+    if (S.rec) { S.rec.stop(); toast('Saving recording…'); setTimeout(leaveNow, 900); }
+    else leaveNow();
+  };
   $('#panel-close').onclick = () => $('#panel').hidden = true;
   $('#focus-close').onclick = closeFocus;
   $('#chat-form').onsubmit = e => {
@@ -397,4 +402,56 @@ function flyReaction(id, e) {
   const n = el('div', 'reaction', e);
   (p && p.tile ? p.tile : document.body).append(n);
   setTimeout(() => n.remove(), 2500);
+}
+/* ===================== client-side recording (local) ==================== */
+function leaveNow() {
+  try { S.ws.close(); S.mesh.destroy(); } catch {}
+  location.href = '/';
+}
+function toggleRecord() {
+  if (S.rec) { S.rec.stop(); return; }
+  S.rec = new Recorder({
+    filename: `PicoMeet-${S.room.code}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`,
+    getLayout: recLayout,
+    getAudioTracks: recAudioTracks,
+    onTick: sec => {
+      const mm = String(Math.floor(sec / 60)).padStart(2, '0');
+      $('#b-rec').querySelector('span').textContent = `${mm}:${String(sec % 60).padStart(2, '0')}`;
+    },
+    onStop: bytes => {
+      S.rec = null;
+      $('#b-rec').classList.remove('on', 'recing');
+      $('#b-rec').querySelector('span').textContent = 'Rec';
+      toast(`Recording saved to your Downloads (${(bytes / 1048576).toFixed(1)} MB).`, 8000);
+      wsend({ t: 'chat', text: '⏹ Recording stopped.' });
+    }
+  });
+  try { S.rec.start(); } catch (e) {
+    S.rec = null;
+    return toast('Recording is not supported in this browser.');
+  }
+  $('#b-rec').classList.add('on', 'recing');
+  toast('Recording started — the file saves to YOUR device, not the server.', 6000);
+  // Transparency: everyone in the room is told, in chat, that recording is on.
+  wsend({ t: 'chat', text: `⏺ ${S.self.name} started recording this meeting (saved locally).` });
+}
+function recLayout() {
+  // Spotlight / screen-share active → record just that surface.
+  if (!$('#focus').hidden) {
+    return [{ video: $('#focus-video'), label: $('#focus-label').textContent, mirror: false }];
+  }
+  const cells = [];
+  document.querySelectorAll('#grid .tile').forEach(t => {
+    const id = t.dataset.id;
+    const self = id === S.self.id;
+    const name = self ? S.self.name : ((S.peers.get(id) || {}).name || '');
+    const hasVideo = !t.classList.contains('novideo');
+    cells.push({ video: hasVideo ? t.querySelector('video') : null, label: name, mirror: self && !S.sharing });
+  });
+  return cells;
+}
+function recAudioTracks() {
+  const out = [...S.local.getAudioTracks()];
+  if (S.mesh) for (const p of S.mesh.peers.values()) out.push(...p.stream.getAudioTracks());
+  return out;
 }
