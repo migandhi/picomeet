@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  PicoMeet installer — Ubuntu 22.04 / 24.04
-#  Usage (interactive):     sudo bash install.sh
-#  Usage (unattended):      sudo bash install.sh -d meet.example.cloudns.ch \
-#                              -e you@mail.com -u admin -p 'S3cretPass!' --with-turn
+#  PicoMeet installer v1.1 — Ubuntu 22.04 / 24.04
+#  Interactive:   sudo bash install.sh
+#  Unattended:    sudo bash install.sh -d meet.example.com -e you@mail.com \
+#                    -u admin -p 'S3cretPass!' --with-turn
 # ============================================================================
 set -Eeuo pipefail
 APP=picomeet
@@ -16,7 +16,7 @@ C_G='\033[1;32m'; C_Y='\033[1;33m'; C_R='\033[1;31m'; C_B='\033[1;36m'; C_0='\03
 say()  { echo -e "${C_G}==>${C_0} $*"; }
 warn() { echo -e "${C_Y}[!]${C_0} $*"; }
 die()  { echo -e "${C_R}[x]${C_0} $*" >&2; exit 1; }
-trap 'die "Failed on line $LINENO. Nothing was left half-running: fix and re-run."' ERR
+trap 'die "Failed on line $LINENO. Fix and re-run — the script is idempotent."' ERR
 # ------------------------------- arguments ---------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,14 +38,14 @@ echo -e "${C_B}
    ___  _         __  __         _
   / _ \(_)__ ___ /  \/  |___ ___| |_
  / ___/ / _/ _ \ /\/\  / -_) -_)  _|
-/_/  /_/\__\___/_/  \/\___\___|\__|   installer
+/_/  /_/\__\___/_/  \/\___\___|\__|   installer v1.1
 ${C_0}"
 # ------------------------------ interactive --------------------------------
 if [[ -z "$DOMAIN" ]]; then
-  echo "Point an A record at this server first (e.g. free CloudDNS / eu.org / DuckDNS)."
-  read -rp "Your domain or subdomain (e.g. meet.myclass.cloudns.ch): " DOMAIN
+  echo "Point an A record at this server first (any registrar; see README → DNS)."
+  read -rp "Your domain or subdomain (e.g. meet.myschool.com): " DOMAIN
 fi
-[[ -n "$DOMAIN" ]] || die "A domain is required for HTTPS. WebRTC will not run without it."
+[[ -n "$DOMAIN" ]] || die "A domain is required. WebRTC needs HTTPS, HTTPS needs a domain."
 if [[ -z "$EMAIL" && $NO_TLS -eq 0 ]]; then
   read -rp "Email for Let's Encrypt expiry notices (blank = skip): " EMAIL
 fi
@@ -79,7 +79,15 @@ say "Installing base packages ..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq curl ca-certificates gnupg git ufw build-essential python3 \
-                       debian-keyring debian-archive-keyring apt-transport-https sqlite3 >/dev/null
+                       debian-keyring debian-archive-keyring apt-transport-https \
+                       sqlite3 unattended-upgrades >/dev/null
+# --------------------- automatic OS security patching ----------------------
+say "Enabling unattended security upgrades (long-term hands-off operation) ..."
+cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+EOF
 # --------------------------------- Node.js ---------------------------------
 if ! command -v node >/dev/null || [[ $(node -v | cut -c2- | cut -d. -f1) -lt 18 ]]; then
   say "Installing Node.js ${NODE_MAJOR}.x ..."
@@ -122,6 +130,10 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
   SECRET=$(openssl rand -hex 32)
   TURN_SECRET=$(openssl rand -hex 24)
   SCHEME="https"; [[ $NO_TLS -eq 1 ]] && SCHEME="http"
+  # v1.1: advertise TURN over UDP *and* TCP so users behind UDP-blocking
+  # firewalls (offices, hotels, campuses) can still connect.
+  TURN_URLS=""
+  [[ $WITH_TURN -eq 1 ]] && TURN_URLS="turn:${DOMAIN}:3478?transport=udp,turn:${DOMAIN}:3478?transport=tcp"
   cat > "$APP_DIR/.env" <<EOF
 PM_PORT=8080
 PM_HOST=127.0.0.1
@@ -136,7 +148,7 @@ PM_MAX_ROOM_PARTICIPANTS=12
 PM_LECTURE_THRESHOLD=9
 PM_MAX_STAGE=4
 PM_STUN=stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478
-PM_TURN_URL=$( [[ $WITH_TURN -eq 1 ]] && echo "turn:${DOMAIN}:3478" )
+PM_TURN_URL=${TURN_URLS}
 PM_TURN_SECRET=$( [[ $WITH_TURN -eq 1 ]] && echo "${TURN_SECRET}" )
 PM_TURN_TTL=7200
 PM_SFU_URL=
@@ -167,12 +179,10 @@ Environment=NODE_ENV=production
 ExecStart=/usr/bin/node --max-old-space-size=192 $APP_DIR/server/index.js
 Restart=always
 RestartSec=3
-# --- resource fences for a 1 GB box ---
 MemoryMax=420M
 MemoryHigh=340M
 TasksMax=256
 LimitNOFILE=8192
-# --- hardening ---
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
@@ -210,7 +220,6 @@ $SITE {
         Permissions-Policy        "camera=(self), microphone=(self), display-capture=(self), geolocation=()"
         -Server
     }
-    # Caddy proxies WebSockets transparently — no extra config needed.
     reverse_proxy 127.0.0.1:8080 {
         flush_interval -1
         header_up X-Forwarded-For {remote_host}
@@ -220,7 +229,7 @@ EOF
 systemctl reload caddy 2>/dev/null || systemctl restart caddy
 # --------------------------------- coturn ----------------------------------
 if [[ $WITH_TURN -eq 1 ]]; then
-  say "Installing coturn (TURN relay for locked-down networks) ..."
+  say "Installing coturn (TURN relay — the firewall-buster) ..."
   apt-get install -y -qq coturn >/dev/null
   sed -i 's/^#\?TURNSERVER_ENABLED=.*/TURNSERVER_ENABLED=1/' /etc/default/coturn
   cat > /etc/turnserver.conf <<EOF
@@ -232,20 +241,20 @@ static-auth-secret=${TURN_SECRET}
 realm=${DOMAIN}
 no-cli
 no-multicast-peers
-no-tcp-relay
 min-port=49160
 max-port=49200
 # ---- bandwidth protection: TURN traffic DOES count against your 1 TB ----
 user-quota=12
 total-quota=60
-bps-capacity=0
 max-bps=600000
 denied-peer-ip=10.0.0.0-10.255.255.255
 denied-peer-ip=172.16.0.0-172.31.255.255
 denied-peer-ip=192.168.0.0-192.168.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
 EOF
   systemctl enable --now coturn >/dev/null
-  warn "TURN relays media THROUGH this droplet. Expect ~0.5 GB per relayed participant-hour."
+  warn "TURN relays media THROUGH this droplet: ~0.5 GB per relayed participant-hour."
 fi
 # --------------------------------- firewall --------------------------------
 say "Configuring firewall ..."
@@ -256,6 +265,11 @@ if [[ $WITH_TURN -eq 1 ]]; then
   ufw allow 5349/tcp >/dev/null; ufw allow 49160:49200/udp >/dev/null
 fi
 ufw --force enable >/dev/null
+# ------------------------------ daily backup -------------------------------
+say "Scheduling daily database backup (03:17, keeps last 7) ..."
+chmod +x $APP_DIR/ops/backup.sh 2>/dev/null || true
+( crontab -l 2>/dev/null | grep -v 'picomeet/ops/backup.sh' ;
+  echo "17 3 * * * /usr/bin/bash $APP_DIR/ops/backup.sh >/dev/null 2>&1" ) | crontab -
 # ------------------------------ helper command -----------------------------
 cat > /usr/local/bin/$APP <<EOF
 #!/usr/bin/env bash
@@ -276,25 +290,18 @@ HEALTH=$(curl -fsS --max-time 5 http://127.0.0.1:8080/api/health || echo "")
 [[ "$HEALTH" == *'"ok":true'* ]] || { journalctl -u $APP -n 40 --no-pager; die "App did not start."; }
 RSS=$(echo "$HEALTH" | grep -o '"rssMB":[0-9]*' | cut -d: -f2)
 cat <<EOF
-${C_G}=========================================================${C_0}
- ${C_G}PicoMeet is live.${C_0}
+$(echo -e "${C_G}")=========================================================
+ PicoMeet is live.
    URL            : https://${DOMAIN}
    Admin console  : https://${DOMAIN}/admin.html
    Admin user     : ${ADMIN_USER}
-   Memory in use  : ${RSS} MB   (Caddy ≈ 25 MB, system ≈ 180 MB)
- Commands:
-   picomeet logs             tail the log
-   picomeet restart          restart the service
-   picomeet update           git pull + restart
-   picomeet backup           snapshot the SQLite database
-   picomeet create-user bob 'pass' host
-   picomeet list-users
-   picomeet stats
+   Memory in use  : ${RSS} MB
+ Commands: picomeet logs | restart | status | update | backup
+           picomeet create-user bob 'pass' host | list-users | stats
  Next steps:
-   1. Open https://${DOMAIN}/login.html and sign in as ${ADMIN_USER}
-   2. Create host accounts and set their meeting/participant limits
+   1. Sign in at https://${DOMAIN}/login.html
+   2. Create host accounts in the admin console
    3. Hosts create rooms and share https://${DOMAIN}/j/<code>
- ${C_Y}Remember:${C_0} media is peer-to-peer. Keep rooms ≤ 8 people for
- comfortable quality on average laptops (see README → Limitations).
-${C_G}=========================================================${C_0}
+ Media is peer-to-peer. Keep rooms <= 8 for best quality.
+=========================================================$(echo -e "${C_0}")
 EOF
