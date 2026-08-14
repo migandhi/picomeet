@@ -47,10 +47,9 @@ function userFromToken(token) {
   if (!token || typeof token !== 'string' || token.length !== 64) return null;
   const row = S.sessGet.get(token);
   if (!row) return null;
-  if (row.expires_at < now()) { S.sessDelete.run(token); return null; }
-  if (!row.active) return null;
-  if (row.expires_at !== undefined && row.expires_at !== null && row.expires_at < now()) return null;
-  if (row.expires_at && row.expires_at < now()) return null;
+  if (row.sess_expires_at < now()) { S.sessDelete.run(token); return null; }  // session expiry
+  if (!row.active) return null;                                               // account disabled
+  if (row.expires_at && row.expires_at < now()) return null;                  // subscription expiry
   return row;
 }
 function subscriptionValid(u) {
