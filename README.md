@@ -322,6 +322,15 @@ A registered Domain Name (e.g., meet.yourdomain.com).
 DNS A Records pointing your domain (and optionally a turn. subdomain) to your server's public IPv4 address.
 
 Root or sudo privileges on your server.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/migandhi/picomeet/main/install.sh | sudo bash -s -- \
+  -d meet.yourdomain.com \
+  -e you@yourdomain.com \
+  -u admin \
+  -p 'YourSecurePassword123!' \
+  --with-turn
+```
 ```bash
 sudo bash install.sh \
   --domain meet.example.com \
