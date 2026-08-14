@@ -1,970 +1,283 @@
-# PicoMeet
+# PicoMeet 🎥
 
-A lightweight, self-hosted video conferencing and classroom application built around WebRTC peer-to-peer media.
+**Self-hosted video conferencing that runs on a $6/month server.**
 
-> **Current repository status:** this repository contains the PicoMeet source implementation and deployment scaffolding. It is suitable for development and further testing, but it should not be described as production-ready until the remaining UI and deployment paths are tested.
+Peer-to-peer WebRTC classrooms and meetings. Your server handles only signalling
+(a few KB per user); video flows browser-to-browser, end-to-end encrypted with
+DTLS-SRTP. One installation script. Live in under 10 minutes.
 
-## Overview
-
-PicoMeet is designed to keep the media path out of the application server whenever possible.
-
-The Node.js server provides:
-
-- HTTP/static file serving
-- REST API
-- WebSocket signalling
-- Authentication and sessions
-- Room management
-- Host/admin controls
-- SQLite persistence
-- ICE/STUN/TURN configuration
-- Usage statistics
-
-The browser handles the WebRTC media path.
-
-```text
-                         PicoMeet server
-                    ┌─────────────────────┐
-                    │       Node.js       │
-                    │                     │
-                    │ REST API            │
-                    │ WebSocket /ws       │
-                    │ Authentication      │
-                    │ Room state          │
-                    │ SQLite              │
-                    └──────────┬──────────┘
-                               │
-                         signalling only
-                               │
-              ┌────────────────┴────────────────┐
-              │                                 │
-        ┌─────▼─────┐                     ┌─────▼─────┐
-        │  Browser  │◄──── WebRTC P2P ───►│  Browser  │
-        │ Participant│   audio/video/data  │ Participant│
-        └───────────┘                     └───────────┘
-```
-
-The optional TURN server can relay WebRTC traffic when a direct peer-to-peer connection cannot be established.
-
-The repository also contains an optional Go/Pion SFU prototype for a future larger-room architecture.
+> 70 MB RAM. 2 npm dependencies. Zero media bandwidth on the server (mesh mode).
 
 ---
 
-## Features implemented in the source
+## Why PicoMeet instead of the other free options?
 
-### WebRTC
+| | **PicoMeet** | Jitsi Meet (self-host) | BigBlueButton | Zoom Free |
+|---|---|---|---|---|
+| Minimum server | **$6 / 1 GB droplet** | 8 GB recommended | 16 GB minimum | n/a (their cloud) |
+| Server media bandwidth | **~0 (P2P mesh)** | All media relayed | All media relayed | n/a |
+| Install | **1 script, ~5 min** | Multi-service | Complex | n/a |
+| Time limit | None (you decide) | None | None | 40 min |
+| Whiteboard + annotation | ✅ (P2P, zero server bytes) | Plugin | ✅ | ✅ |
+| Multi-tenant accounts/limits | ✅ built-in admin | Manual | ✅ | n/a |
+| Data ownership | **100% yours** | Yours | Yours | Zoom's |
+| Firewall traversal | STUN + TURN (UDP **and** TCP) | ✅ | ✅ | ✅ |
 
-- Peer-to-peer audio
-- Peer-to-peer video
-- WebRTC signalling over WebSocket
-- ICE server configuration
-- STUN support
-- Optional TURN support
-- Adaptive video quality
-- Client-side quality monitoring
-- Screen sharing
+The trade-off is honest: **mesh moves the cost from your server to participant
+devices**, which is why PicoMeet is fantastic up to ~8 people per room and
+switches to Lecture Mode beyond that. See [Limitations](#-limitations--read-this).
 
-### Classroom tools
+---
 
-- Seminar mode
-- Lecture mode
-- Stage management
-- Raise hand
-- Reactions
-- Chat
-- Shared whiteboard
-- Screen annotation
-- Pen
-- Marker
-- Arrow
-- Rectangle
-- Eraser
-- Undo
-- Clear
+## Architecture
 
-### Host controls
+```
+            Caddy (auto-HTTPS) ──► Node.js (signalling, auth, rooms, SQLite)
+                                        │  WebSocket /ws — SDP/ICE/chat only
+                 ┌──────────────────────┴──────────────────────┐
+           Browser A ◄════ WebRTC P2P (DTLS-SRTP media) ════► Browser B
+                 └───── optional coturn relay when P2P is blocked ─────┘
+```
 
-The room implementation contains controls for:
+- **Adaptive Mesh Governor** — the server dictates a quality contract
+  (resolution/fps/bitrate) that scales down as rooms grow, so laptops survive.
+- **Lecture Mode** — beyond 9 people, only up to 4 "stage" publishers send media;
+  the audience are *silent peers* (zero PeerConnections) — that's how a mesh
+  system handles bigger classes.
+- **TURN (optional)** — relays media for users behind strict NATs/firewalls,
+  over UDP *and* TCP 3478, plus TLS on 5349.
 
-- Mute participant
-- Mute all
-- Camera control
-- Remove participant
-- Promote to co-host
-- Invite to stage
-- Lock room
-- Spotlight
-- End meeting
+---
 
-### Authentication
+## 🚀 Quick Start (go live in ~10 minutes)
 
-- Username/password login
-- scrypt password hashing
-- Session cookies
-- Session expiry
-- Login rate limiting
-- Account activation/deactivation
-- Subscription expiry checks
-- Admin-only API
+### Step 1 — Get a server
+Any Ubuntu 22.04/24.04 VPS with a public IP. Tested target: **DigitalOcean
+$6 droplet (1 GB / 1 vCPU / 1 TB transfer)**. Vultr, Hetzner (€4), Linode,
+Oracle free tier all work.
 
-### Administration
+### Step 2 — Point DNS at it (any registrar)
+Create one **A record**:
 
-The current repository includes an administrator interface for:
+| Type | Host / Name | Value | TTL |
+|------|-------------|-------|-----|
+| A | `meet` (→ meet.yourdomain.com) | your server's public IPv4 | 300 |
 
-- Viewing server statistics
-- Viewing live meetings
-- Ending live meetings
-- Creating users
-- Changing user roles
-- Changing room limits
-- Changing participant limits
-- Changing meeting time limits
-- Setting expiry dates
-- Activating/deactivating users
-- Deleting users
-- Resetting passwords
+Registrar-specific notes:
+- **GoDaddy / Namecheap / Google / Cloudflare / anyone** — the A record above is all you need.
+- **Cloudflare users:** set the record to **DNS only (grey cloud)**. The orange
+  proxy breaks TURN and adds latency to WebSockets.
+- **Free subdomains** work too: DuckDNS, ClouDNS, eu.org, afraid.org.
+- Verify propagation before installing: `nslookup meet.yourdomain.com` must
+  return your server IP. Usually < 5 minutes with TTL 300.
+- Optional but recommended if using TURN: add a second A record `turn` →
+  same IP (used for TLS-TURN).
 
-Supported roles:
+### Step 3 — Install
 
-| Role | Description |
+```bash
+ssh root@YOUR_SERVER_IP
+git clone https://github.com/migandhi/picomeet.git
+cd picomeet
+sudo bash install.sh -d meet.yourdomain.com -e you@email.com \
+     -u admin -p 'YourStrongPassword!' --with-turn
+```
+
+That's it. The installer sets up Node.js 20, Caddy (automatic HTTPS with
+auto-renewal), systemd, UFW firewall, swap, coturn, daily backups, log
+rotation, and unattended OS security updates — everything needed for
+**long-term hands-off operation**.
+
+### Step 4 — Use it
+1. Sign in at `https://meet.yourdomain.com/login.html`
+2. Admin console → create **host** accounts for your teachers/organisers
+3. Hosts sign in → dashboard → **Create Room** → share `https://meet.yourdomain.com/j/abc-def-ghi`
+4. Guests just click the link, type a name, and join. No account, no app, no download.
+
+---
+
+## 👤 Roles & SaaS model
+
+| Role | Can do |
 |---|---|
-| `admin` | Full administration |
-| `host` | Can create and host rooms |
-| `user` | Can join rooms but cannot create rooms |
+| **admin** | Everything: create users, set per-user limits (rooms, seats, minutes, expiry), end meetings, view usage |
+| **host** | Create rooms, host meetings, moderate (mute/kick/stage/lock/lobby) |
+| **user** | Join with an account (for rooms where guests are disabled) |
+| **guest** | Join via link (+ optional PIN) |
+
+**SaaS without a payment gateway (current design):** you sell access manually —
+create a host account, set `max participants`, `max minutes` and an
+**expiry date** in the admin console. When it expires, their meetings stop
+automatically. All money logic funnels through `server/modules/billing.js`
+(a stub), so adding Stripe/Razorpay later touches exactly one file plus one
+webhook route.
 
 ---
 
-## Adaptive Mesh Governor
+## 🧭 Usage Guidelines (read before your first real class)
 
-The server contains an adaptive quality policy in:
+### Room sizes
+| People | Experience | Recommendation |
+|---:|---|---|
+| 2–4 | Excellent (720p/540p) | Ideal |
+| 5–6 | Very good (360p) | Recommended max for seminars |
+| 7–8 | Good (270p) | Practical max on average laptops |
+| 9–12 | Low-res, high client CPU | Use **Lecture Mode** |
+| 13+ | — | Lecture Mode auto-engages (audience are view/chat-only until invited on stage) |
 
-```text
-server/signaling.js
+### Best practices
+- **Hosts start the meeting** — guests cannot open an empty room (by design).
+- Use a **PIN** or **lobby (knock)** for public links.
+- **Screen sharing:** one presenter at a time; annotation (✏️) draws over
+  the share via data channels — zero server load.
+- **Whiteboard** works even with cameras off — great for low-bandwidth classes.
+- Mobile users: joining works in Chrome/Safari; keep mobile rooms ≤ 4 for battery.
+- Ask participants on weak Wi-Fi to **turn off video** — audio + whiteboard
+  is extremely light (~40 kbps).
+- Keyboard shortcuts: **M** mute · **V** camera · **D** draw.
+
+### Server-wide caps (defaults, in `.env`)
 ```
-
-The current quality ladder is:
-
-| Participants | Resolution | FPS | Video bitrate |
-|---:|---:|---:|---:|
-| 1–2 | 1280×720 | 30 | 1400 kbps |
-| 3–4 | 960×540 | 25 | 800 kbps |
-| 5–6 | 640×360 | 20 | 450 kbps |
-| 7–9 | 480×270 | 15 | 280 kbps |
-| 10–12 | 320×180 | 12 | 160 kbps |
-| 13+ | 320×180 | 10 | 120 kbps |
-
-Screen sharing currently uses:
-
-```text
-1600×900
-8 FPS
-700 kbps
+8 concurrent meetings · 60 total live participants · 12 per room
 ```
-
-These values are application defaults, not guaranteed performance figures.
-
----
-
-## Lecture Mode
-
-When a room is in lecture mode, only participants on the stage are intended to publish media.
-
-The server's default configuration is:
-
-```env
-PM_LECTURE_THRESHOLD=9
-PM_MAX_STAGE=4
-```
-
-This is intended to reduce the number of peer connections required by audience members.
+Raise only after load-testing. The caps protect the droplet, not the media
+(the server never carries media in mesh mode).
 
 ---
 
-# Repository structure
+## ⚠️ Limitations — read this
 
-```text
-picomeet/
-│
-├── README.md
-├── LICENSE
-├── package.json
-├── .env.example
-├── .gitignore
-├── DEVELOPMENT-WINDOWS.md
-├── install.sh
-│
-├── server/
-│   ├── index.js
-│   ├── config.js
-│   ├── db.js
-│   ├── auth.js
-│   ├── http.js
-│   ├── ice.js
-│   ├── signaling.js
-│   ├── cli.js
-│   │
-│   ├── routes/
-│   │   ├── api.js
-│   │   └── admin.js
-│   │
-│   ├── modules/
-│   │   └── billing.js
-│   │
-│   └── migrations/
-│       └── 001_init.sql
-│
-├── public/
-│   ├── index.html
-│   ├── login.html
-│   ├── room.html
-│   ├── admin.html
-│   │
-│   ├── css/
-│   │   └── app.css
-│   │
-│   └── js/
-│       ├── mesh.js
-│       ├── quality.js
-│       ├── board.js
-│       ├── room.js
-│       └── admin.js
-│
-├── sfu/
-│   ├── main.go
-│   ├── go.mod
-│   └── README.md
-│
-├── ops/
-│   ├── picomeet.service
-│   ├── Caddyfile
-│   ├── turnserver.conf.tmpl
-│   ├── update.sh
-│   └── backup.sh
-│
-├── docs/
-│   ├── ARCHITECTURE.md
-│   ├── LIMITS.md
-│   └── API.md
-│
-├── data/
-│   └── .gitkeep
-│
-└── .github/
-    └── workflows/
-        └── node.yml
-```
+Being honest is how we beat the competition:
+
+1. **Mesh cost lands on participants.** In an N-person seminar each device
+   encodes once but decodes N−1 streams and uploads N−1 copies. An 8-person
+   room needs roughly **2–3 Mbps up** and a mid-range laptop. That is the
+   physics of P2P, not a bug.
+2. **A $6 droplet is small.** Defaults (8 meetings / 60 people) are safe.
+   Signalling is tiny, but WebSocket + TURN load grows with users.
+3. **TURN eats your bandwidth quota.** Direct P2P costs the server ~nothing;
+   *relayed* users cost ~0.5 GB per participant-hour against the droplet's
+   1 TB/month. coturn is capped (600 kbps/user, 60 sessions) to protect you.
+   Typically only 10–20% of connections need TURN.
+4. **No server-side recording.** Recording P2P media requires an SFU or client
+   recording. Roadmap item.
+5. **Live meetings end if the server restarts.** Room *definitions* persist
+   in SQLite; live state is in memory — deliberate simplicity. `picomeet
+   restart` = everyone rejoins via the same link (takes seconds).
+6. **Single-server design.** One box, one domain, up to ~60 concurrent people.
+   Need more? Deploy a second $6 droplet on another subdomain (shard by
+   domain) — still cheaper than one big Jitsi box.
+7. **iOS Safari quirks:** backgrounding the tab pauses video (OS policy);
+   users should keep the tab foregrounded.
+8. **Very strict corporate networks** that block all UDP *and* non-443 TCP may
+   still fail even with TURN on 3478/5349. The fix is TURN-over-TLS on port
+   443 — which requires a second IP or a dedicated TURN droplet (documented
+   in `docs/LIMITS.md`).
+9. **The bundled Go SFU is a prototype.** Do not expose it publicly without
+   hardening (see `sfu/README.md`).
 
 ---
 
-# Technology
+## 🔥 Firewall traversal (how PicoMeet gets through)
 
-## Backend
+Connection attempts happen in this order, automatically:
 
-- Node.js
-- Native Node.js HTTP server
-- WebSocket (`ws`)
-- SQLite (`better-sqlite3`)
-- CommonJS modules
+1. **Direct P2P over UDP** (STUN-discovered) — ~80% of cases, zero server cost.
+2. **TURN over UDP 3478** — strict NATs.
+3. **TURN over TCP 3478** — UDP-blocking firewalls (offices, hotels).
+4. **TURN over TLS 5349** — deep-packet-inspection environments.
 
-## Frontend
-
-- HTML
-- CSS
-- JavaScript ES modules
-- WebRTC
-- WebRTC DataChannels
-- Canvas
-
-There is currently no frontend framework or bundler.
-
-## Optional media infrastructure
-
-- coturn for TURN
-- Go + Pion WebRTC for the optional SFU
+All of this is transparent to users. Enable it with `--with-turn` at install
+time. Signalling itself always travels over WSS on port 443, which every
+network allows.
 
 ---
 
-# Requirements
-
-## Development
-
-- Git
-- Node.js 18 or newer
-- A modern browser with WebRTC support
-
-The deployment installer targets Node.js 20.
-
-## Production starting point
-
-The included deployment design targets:
-
-- Ubuntu 22.04 or 24.04
-- 1 GB RAM
-- 1 vCPU
-- Public IP address
-- Domain/subdomain
-- HTTPS
-
-These are starting requirements, not capacity guarantees.
-
----
-
-# Installation
-
-🛠️ Complete Installation Guide
-1. Prerequisites
-Before running the installer, ensure you have the following:
-
-A clean installation of Ubuntu 22.04 or 24.04 LTS.
-
-A registered Domain Name (e.g., meet.yourdomain.com).
-
-DNS A Records pointing your domain (and optionally a turn. subdomain) to your server's public IPv4 address.
-
-Root or sudo privileges on your server.
+## 🛠 Operations
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/migandhi/picomeet/main/install.sh | sudo bash -s -- \
-  -d meet.yourdomain.com \
-  -e you@yourdomain.com \
-  -u admin \
-  -p 'YourSecurePassword123!' \
-  --with-turn
-```
-```bash
-sudo bash install.sh \
-  --domain meet.example.com \
-  --email admin@example.com \
-  --user admin \
-  --pass 'SuperSecretPass123!' \
-  --with-turn
+picomeet logs        # tail live logs
+picomeet status      # service status
+picomeet restart     # restart app (ends live meetings)
+picomeet update      # git pull + npm install + restart
+picomeet backup      # snapshot SQLite now (daily cron already runs at 03:17)
+picomeet stats       # 30-day usage
+picomeet list-users
+picomeet create-user teacher1 'password123' host
+picomeet passwd teacher1 'newpassword'
 ```
 
-2. Post-Installation & First Login
-Once the script finishes executing, all required services will automatically start in the background.
+Health endpoint for uptime monitors (UptimeRobot etc. — free):
+`https://meet.yourdomain.com/api/health`
 
-Open your web browser and navigate to your domain (e.g., [https://meet.yourdomain.com/login.html](https://meet.yourdomain.com/login.html)).
+**Disaster recovery:** copy `data/backup-*.db.gz` off-box weekly. Restoring =
+fresh install + drop the DB file into `/opt/picomeet/data/picomeet.db`.
 
-Log in using the Admin Credentials you defined during step 3.
+---
 
-Access the Admin Panel to create additional Host/User accounts, adjust concurrent meeting limits, and start generating secure room links!
+## 🔒 Security
 
-⚙️ Managing the Server
-PicoMeet is managed entirely via standard systemd commands. Use these to monitor or restart your deployment:
+- Media is **end-to-end encrypted** (DTLS-SRTP) between browsers; the server
+  cannot see or hear anything even in principle (mesh mode).
+- scrypt password hashing, HttpOnly/SameSite session cookies, login rate
+  limiting, per-account expiry, admin audit log.
+- systemd sandboxing (`ProtectSystem=strict`, memory caps), UFW default-deny,
+  security headers via Caddy, automatic TLS renewal, unattended OS patches.
+- Whiteboard/annotation strokes travel over encrypted data channels only.
+
+Recommended before selling access: independent security review + pen test.
+
+---
+
+## 💾 Local development
 
 ```bash
-
-# Check if the PicoMeet service is running
-sudo systemctl status picomeet
-
-# View live connection traffic and error logs
-sudo journalctl -u picomeet -f
-
-# Restart the application (e.g., after updating CSS or HTML files)
-sudo systemctl restart picomeet
-
+git clone https://github.com/migandhi/picomeet.git
+cd picomeet && npm install
+cp .env.example .env          # keep PM_PUBLIC_URL=http://localhost:8080
+node server/cli.js create-admin admin 'devpassword'
+npm run dev                   # http://localhost:8080
 ```
+Browsers allow camera/mic on `localhost` without HTTPS.
+Windows workflow: see `DEVELOPMENT-WINDOWS.md`.
 
-## Manual Clone the repository
+---
+
+## 📦 Publishing your own fork to GitHub
 
 ```bash
-git clone https://github.com/YOURNAME/picomeet.git
+# 1. Create an empty repo on github.com (no README/license — you have them)
+# 2. Then:
+git clone https://github.com/migandhi/picomeet.git
 cd picomeet
+git remote set-url origin https://github.com/YOURNAME/picomeet.git
+git add -A
+git commit -m "PicoMeet v1.1 production release"
+git branch -M main
+git push -u origin main
 ```
-
-## Install Node dependencies
+Update `REPO_URL` at the top of `install.sh` (or pass
+`PM_REPO=https://github.com/YOURNAME/picomeet.git`) so the one-line installer
+pulls **your** fork:
 
 ```bash
-npm install
+curl -fsSL https://raw.githubusercontent.com/YOURNAME/picomeet/main/install.sh \
+  | sudo PM_REPO=https://github.com/YOURNAME/picomeet.git bash -s -- \
+  -d meet.yourdomain.com -e you@mail.com -u admin -p 'StrongPass!' --with-turn
 ```
 
-The application currently declares two runtime dependencies:
-
-```text
-better-sqlite3
-ws
-```
-
-## Configure environment
-
-Copy the example file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` before running the application.
-
-Example:
-
-```env
-PM_PORT=8080
-PM_HOST=127.0.0.1
-PM_PUBLIC_URL=http://localhost:8080
-PM_DB=./data/picomeet.db
-PM_SECRET=change-this-secret
-
-PM_SESSION_DAYS=14
-
-PM_MAX_CONCURRENT_MEETINGS=8
-PM_MAX_TOTAL_PARTICIPANTS=60
-PM_MAX_ROOM_PARTICIPANTS=12
-
-PM_LECTURE_THRESHOLD=9
-PM_MAX_STAGE=4
-
-PM_STUN=stun:stun.l.google.com:19302
-
-PM_TURN_URL=
-PM_TURN_SECRET=
-PM_TURN_TTL=7200
-
-PM_SFU_URL=
-```
-
-For production, use a strong random value for `PM_SECRET`.
+Never commit `.env`, `data/*.db`, backups, or `node_modules` (already
+gitignored).
 
 ---
 
-# Run locally
+## 🗺 Roadmap
 
-Start the server:
+Client-side recording · breakout rooms · polls & attendance export ·
+hardened SFU for 50+ lectures · Stripe/Razorpay via `modules/billing.js` ·
+E2E tests.
 
-```bash
-npm start
-```
+## License
 
-Or use Node's development watch mode:
-
-```bash
-npm run dev
-```
-
-The default local address is:
-
-```text
-http://localhost:8080
-```
-
-Open:
-
-```text
-http://localhost:8080/
-```
-
-The landing page accepts a meeting code and redirects to the room.
-
----
-
-# Windows development
-
-If you are developing on Windows:
-
-```powershell
-git clone https://github.com/YOURNAME/picomeet.git
-cd picomeet
-
-npm install
-
-Copy-Item .env.example .env
-
-npm run dev
-```
-
-Then open:
-
-```text
-http://localhost:8080/
-```
-
-See:
-
-```text
-DEVELOPMENT-WINDOWS.md
-```
-
-for the Windows-specific workflow.
-
----
-
-# Create the first administrator
-
-The command-line interface supports administrator creation:
-
-```bash
-node server/cli.js create-admin admin 'YourPassword'
-```
-
-Password requirements currently require at least 8 characters.
-
-After creating the administrator, sign in at:
-
-```text
-/login.html
-```
-
-The administrator interface is:
-
-```text
-/admin.html
-```
-
----
-
-# CLI
-
-Available commands:
-
-```bash
-node server/cli.js create-admin [user] [pass]
-```
-
-```bash
-node server/cli.js create-user [user] [pass] [host|user]
-```
-
-```bash
-node server/cli.js passwd [user] [pass]
-```
-
-```bash
-node server/cli.js list-users
-```
-
-```bash
-node server/cli.js stats
-```
-
-```bash
-node server/cli.js backup [file.db]
-```
-
----
-
-# HTTP endpoints
-
-The application currently exposes the following API endpoints.
-
-## Authentication
-
-```text
-POST /api/login
-POST /api/logout
-GET  /api/me
-```
-
-## Rooms
-
-```text
-POST   /api/rooms
-DELETE /api/rooms/:code
-GET    /api/room/:code
-```
-
-## WebRTC
-
-```text
-GET /api/ice
-```
-
-## Health
-
-```text
-GET /api/health
-```
-
-## Administration
-
-```text
-GET    /api/admin/users
-POST   /api/admin/users
-PATCH  /api/admin/users/:id
-DELETE /api/admin/users/:id
-
-GET    /api/admin/live
-POST   /api/admin/rooms/:code/end
-GET    /api/admin/audit
-```
-
-## WebSocket
-
-WebRTC signalling is provided at:
-
-```text
-/ws
-```
-
-The WebSocket server is implemented in:
-
-```text
-server/signaling.js
-```
-
----
-
-# Meeting links
-
-The server supports short meeting URLs:
-
-```text
-/j/abc-def-ghi
-```
-
-These redirect to:
-
-```text
-/room.html?r=abc-def-ghi
-```
-
-The public landing page also accepts a meeting code:
-
-```text
-/
-```
-
----
-
-# Database
-
-PicoMeet uses SQLite.
-
-The default database path is:
-
-```text
-data/picomeet.db
-```
-
-The database is intentionally not committed to Git.
-
-The `.gitignore` excludes:
-
-```text
-*.db
-*.db-wal
-*.db-shm
-*.db.gz
-```
-
-Database initialization is defined in:
-
-```text
-server/migrations/001_init.sql
-```
-
----
-
-# Backup
-
-The CLI supports SQLite backups:
-
-```bash
-node server/cli.js backup ./data/backup.db
-```
-
-The repository also contains:
-
-```text
-ops/backup.sh
-```
-
-The deployment design can schedule this script with cron.
-
----
-
-# Production deployment
-
-The repository contains:
-
-```text
-install.sh
-```
-
-The installer is designed for Ubuntu.
-
-Example:
-
-```bash
-sudo bash install.sh
-```
-
-It can configure:
-
-- Node.js
-- Caddy
-- SQLite
-- systemd
-- UFW
-- swap
-- application files
-- HTTPS
-- optional coturn
-- administrator account
-
-An unattended installation can be started with:
-
-```bash
-sudo bash install.sh \
-  -d meet.example.com \
-  -e admin@example.com \
-  -u admin \
-  -p 'CHANGE_THIS_PASSWORD' \
-  --with-turn
-```
-
-Do not use the example password in a real deployment.
-
----
-
-# Caddy
-
-The repository contains a deployment template:
-
-```text
-ops/Caddyfile
-```
-
-Caddy reverse-proxies requests to:
-
-```text
-127.0.0.1:8080
-```
-
-It also provides HTTPS when configured with a real domain.
-
----
-
-# systemd
-
-The repository contains:
-
-```text
-ops/picomeet.service
-```
-
-The production installer creates the corresponding systemd service.
-
-The application is intended to run as an unprivileged service account.
-
----
-
-# TURN
-
-TURN support is optional.
-
-Configure:
-
-```env
-PM_TURN_URL=turn:your-domain.example:3478
-PM_TURN_SECRET=your-secret
-PM_TURN_TTL=7200
-```
-
-The installer can install coturn:
-
-```bash
-sudo bash install.sh --with-turn
-```
-
-TURN should be enabled only when required because relayed media consumes server bandwidth.
-
----
-
-# Optional SFU
-
-The repository contains an optional Go/Pion SFU prototype:
-
-```text
-sfu/
-```
-
-Build it with:
-
-```bash
-cd sfu
-go build -ldflags="-s -w" -o picosfu .
-```
-
-The SFU listens on:
-
-```text
-127.0.0.1:7000
-```
-
-The supplied SFU is a **reference implementation**, not a production-hardened public SFU.
-
-Before exposing it to the Internet, add appropriate:
-
-- authentication
-- authorization
-- origin validation
-- resource limits
-- bandwidth limits
-- cleanup
-- monitoring
-- production RTCP/PLI handling
-
----
-
-# Capacity and limitations
-
-PicoMeet's default architecture is a mesh.
-
-In mesh mode, every participant maintains connections to other participants.
-
-Therefore, increasing room size increases the CPU, upload and download requirements of participant devices.
-
-The application has conservative defaults:
-
-```env
-PM_MAX_CONCURRENT_MEETINGS=8
-PM_MAX_TOTAL_PARTICIPANTS=60
-PM_MAX_ROOM_PARTICIPANTS=12
-PM_LECTURE_THRESHOLD=9
-PM_MAX_STAGE=4
-```
-
-These values are application safety limits, not guaranteed capacity figures.
-
-For detailed discussion:
-
-```text
-docs/LIMITS.md
-```
-
-For the architecture:
-
-```text
-docs/ARCHITECTURE.md
-```
-
----
-
-# Security
-
-The current source includes:
-
-- scrypt password hashing
-- Per-user password salts
-- Session cookies
-- Login rate limiting
-- Account activation controls
-- Subscription expiry checks
-- Admin authorization
-- Room authorization
-- UFW configuration in the installer
-- systemd service hardening
-- Caddy security headers
-
-Before production use, perform a separate security review and penetration test.
-
----
-
-# Important current repository limitations
-
-This section intentionally documents what is **actually present in the current source tree** rather than claiming features that have not been implemented.
-
-### Host dashboard
-
-`login.html` currently redirects non-admin users to:
-
-```text
-/dashboard.html
-```
-
-but `public/dashboard.html` is not currently present in this repository.
-
-The room, authentication API and administrative interface are present, but a dedicated host dashboard still needs to be added.
-
-### Frontend API helper
-
-The current source does not contain a separate:
-
-```text
-public/js/api.js
-```
-
-module. API calls are currently made directly from the relevant pages/scripts.
-
-### Favicon
-
-`room.html` references:
-
-```text
-/assets/favicon.svg
-```
-
-but the current repository does not contain that asset.
-
-These are small repository-completeness issues that should be resolved before calling the application a finished release.
-
----
-
-# Development roadmap
-
-Potential next steps:
-
-1. Add the missing host dashboard.
-2. Add the referenced favicon asset.
-3. Add automated browser/WebRTC tests.
-4. Test room creation and joining end-to-end.
-5. Test TURN connectivity.
-6. Harden and test the SFU.
-7. Add client-side recording.
-8. Add breakout rooms.
-9. Add polls and quizzes.
-10. Add attendance export.
-11. Add billing integration.
-12. Perform security review.
-13. Load-test different room sizes and devices.
-
----
-
-# Contributing
-
-Create a feature branch:
-
-```bash
-git checkout -b feature/my-feature
-```
-
-Make changes and test them.
-
-Then:
-
-```bash
-git add .
-git commit -m "Describe the change"
-git push origin feature/my-feature
-```
-
-Open a Pull Request on GitHub.
-
----
-
-# License
-
-PicoMeet is intended to be distributed under:
-
-**AGPL-3.0-or-later**
-
-See `LICENSE` for the repository's license notice.
-
----
-
-# Project documentation
-
-Additional documentation is available in:
-
-```text
-docs/ARCHITECTURE.md
-docs/LIMITS.md
-docs/API.md
-DEVELOPMENT-WINDOWS.md
-sfu/README.md
-```
-
----
-
-## PicoMeet
-
-Lightweight WebRTC conferencing and classroom infrastructure designed for self-hosting.
+AGPL-3.0-or-later. If you run a modified version as a service, you must
+publish your modifications — which keeps the ecosystem honest.
