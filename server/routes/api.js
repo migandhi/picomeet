@@ -55,6 +55,9 @@ r.post('/api/rooms', async (req, res) => {
   const u = auth.fromRequest(req);
   if (!u || !auth.subscriptionValid(u)) return json(res, 401, { error: 'Not signed in' });
   if (u.role === 'user') return json(res, 403, { error: 'Your account cannot create rooms. Ask the admin for Host privileges.' });
+  /* v1.1: anti-spam — max 10 new rooms per hour per account */
+  if (!auth.rateLimit('mkroom:' + u.id, 10, 60 * 60 * 1000))
+    return json(res, 429, { error: 'Too many rooms created. Try again in an hour.' });
   if (S.roomCountByOwner.get(u.id).c >= Math.max(u.max_rooms * 5, 5))
     return json(res, 403, { error: 'Room list full — delete an old room first.' });
   const b = await readJson(req);
