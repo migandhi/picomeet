@@ -208,7 +208,12 @@ if [[ $NO_TLS -eq 1 ]]; then SITE=":80"; else SITE="$DOMAIN"; fi
 cat > /etc/caddy/Caddyfile <<EOF
 {
 $( [[ -n "$EMAIL" ]] && echo "    email $EMAIL" )
-    servers { timeouts { read_body 10s idle 10m } }
+    servers {
+        timeouts {
+            read_body 10s
+            idle 10m
+        }
+    }
 }
 $SITE {
     encode zstd gzip
