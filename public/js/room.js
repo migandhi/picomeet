@@ -12,8 +12,10 @@ const S = {
   local: null, camTrack: null, screenTrack: null,
   mic: true, cam: true, sharing: false, hand: false,
   ink: null, wb: null, drawing: false, focusId: null, wbOpen: false,
-  chat: [], unread: 0, rec: null
+  chat: [], unread: 0, rec: null,
+  vadTimer: null, vadCtx: null
 };
+
 /* ============================== bootstrap ============================== */
 (async function boot() {
   if (!code) return fail('No meeting code in the link.');
@@ -25,7 +27,7 @@ const S = {
 
   const me = await fetch('/api/me').then(r => r.json()).catch(() => ({}));
 
-  // Option A: If guests are disallowed and the user is not authenticated, redirect to login
+  // Guest restriction redirect
   if (!info.guestOk && !me.user) {
     sessionStorage.setItem('pm_redirect', `/j/${encodeURIComponent(code)}`);
     location.href = `/login.html?msg=${encodeURIComponent('This meeting requires an account to join.')}`;
@@ -93,6 +95,7 @@ function onMessage(m) {
       S.mesh.addEventListener('stream', e => attachStream(e.detail.id, e.detail.stream));
       S.mesh.addEventListener('dcmsg', e => onDC(e.detail.id, e.detail.data));
       S.mesh.addEventListener('dcopen', e => {
+        // Directed sync to prevent full mesh broadcast storms
         if (S.wb && S.wb.strokes.length && e.detail.dc.readyState === 'open') {
           const msg = JSON.stringify({ p: 'board', ch: 'wb', ...S.wb.snapshot() });
           try { e.detail.dc.send(msg); } catch {}
@@ -136,7 +139,7 @@ function onHostCmd(m) {
   if (m.a === 'stage-remove') { S.mic = false; S.cam = false; applyTracks(); pushState(); }
 }
 
-/* ==================== Adaptive Mesh Governor (client) ================== */
+/* ==================== Adaptive Mesh Governor ==================== */
 function applyPolicy(p) {
   S.policy = p;
   if (!S.mesh) return;
@@ -189,6 +192,8 @@ function attachStream(id, stream) {
   const v = p.tile.querySelector('video');
   if (v.srcObject !== stream) v.srcObject = stream;
   p.tile.classList.toggle('novideo', !stream.getVideoTracks().some(t => t.readyState === 'live'));
+
+  // Late joiner dynamic focus binding
   if (S.focusId === id || (p.st && p.st.screen && !S.focusId)) {
     openFocus(id, stream);
   }
@@ -204,7 +209,11 @@ function setPeerState(id, st) {
   p.tile.classList.toggle('hand', !!st.hand);
   p.tile.querySelector('.ic').textContent =
     (st.hand ? '✋' : '') + (st.screen ? '🖥' : '') + (st.mic ? '' : '🔇');
-  if (st.screen && !S.focusId) openFocus(id);
+
+  if (st.screen && !S.focusId) {
+    const stream = (S.mesh && S.mesh.peers.get(id)) ? S.mesh.peers.get(id).stream : null;
+    openFocus(id, stream);
+  }
 }
 
 function renderCount() {
@@ -267,7 +276,7 @@ async function toggleShare() {
 /* =========================== focus + annotation ======================== */
 function openFocus(id, stream) {
   S.focusId = id;
-  const src = stream || (id === S.self.id ? S.local : (S.mesh.peers.get(id) || {}).stream);
+  const src = stream || (id === S.self.id ? S.local : (S.mesh && S.mesh.peers.get(id) ? S.mesh.peers.get(id).stream : null));
   $('#focus-video').srcObject = src || null;
   $('#focus-video').muted = (id === S.self.id);
   $('#focus-label').textContent = (id === S.self.id ? 'You' : (S.peers.get(id) || {}).name || '') + ' — presenting';
@@ -419,12 +428,11 @@ function bindUI() {
   addEventListener('beforeunload', () => { try { S.ws.close(); } catch {} });
 }
 
-/* --------- local voice activity: 1 tiny WS message, no server CPU -------- */
 function startVAD() {
   const a = S.local.getAudioTracks()[0]; if (!a) return;
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(new MediaStream([a]));
-  const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
+  S.vadCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = S.vadCtx.createMediaStreamSource(new MediaStream([a]));
+  const an = S.vadCtx.createAnalyser(); an.fftSize = 512; src.connect(an);
   const buf = new Uint8Array(an.frequencyBinCount);
   let last = false;
   S.vadTimer = setInterval(() => {
@@ -435,7 +443,11 @@ function startVAD() {
   }, 500);
 }
 
-/* ------------------------------- helpers -------------------------------- */
+function stopVAD() {
+  if (S.vadTimer) clearInterval(S.vadTimer);
+  if (S.vadCtx) try { S.vadCtx.close(); } catch {}
+}
+
 function toast(msg, ms = 4000, actions) {
   const t = el('div', 'toast', msg);
   if (actions) actions.forEach(([label, fn]) => {
@@ -455,9 +467,8 @@ function flyReaction(id, e) {
   setTimeout(() => n.remove(), 2500);
 }
 
-/* ===================== client-side recording (local) ==================== */
 function leaveNow() {
-  if (S.vadTimer) clearInterval(S.vadTimer);
+  stopVAD();
   try { S.ws.close(); S.mesh.destroy(); } catch {}
   location.href = '/';
 }
