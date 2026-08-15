@@ -22,11 +22,21 @@ const S = {
   catch { return fail('Cannot reach the server.'); }
   if (info.error) return fail(info.error);
   if (!info.ownerActive) return fail('This meeting is unavailable (host account inactive).');
+
+  const me = await fetch('/api/me').then(r => r.json()).catch(() => ({}));
+
+  // Option A: If guests are disallowed and the user is not authenticated, redirect to login
+  if (!info.guestOk && !me.user) {
+    sessionStorage.setItem('pm_redirect', `/j/${encodeURIComponent(code)}`);
+    location.href = `/login.html?msg=${encodeURIComponent('This meeting requires an account to join.')}`;
+    return;
+  }
+
   $('#gate-room').textContent = `“${info.name}” · code ${info.code}` + (info.live ? ` · ${info.live} online` : '');
   if (info.needsPin) $('#pin-wrap').hidden = false;
-  const me = await fetch('/api/me').then(r => r.json()).catch(() => ({}));
   if (me.user) { $('#g-name').value = me.user.name; $('#g-name').disabled = true; }
   else $('#g-name').value = localStorage.getItem('pm.name') || '';
+
   try {
     S.local = await navigator.mediaDevices.getUserMedia({
       video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
@@ -43,7 +53,9 @@ const S = {
   $('#g-join').onclick = join;
   $('#g-name').addEventListener('keydown', e => e.key === 'Enter' && join());
 })();
+
 function fail(msg) { $('#gate-msg').textContent = msg; $('#g-join') && ($('#g-join').disabled = true); }
+
 /* ================================ join ================================= */
 function join() {
   const name = $('#g-name').value.trim();
@@ -55,6 +67,7 @@ function join() {
   $('#g-join').disabled = true; $('#gate-msg').textContent = 'Connecting…';
   openSocket(name, $('#g-pin').value.trim());
 }
+
 function openSocket(name, pin) {
   const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
   const ws = new WebSocket(url);
@@ -64,7 +77,9 @@ function openSocket(name, pin) {
   ws.onclose = () => { if (S.self) toast('Disconnected. Reload to rejoin.', 8000); };
   ws.onerror = () => fail('Connection failed.');
 }
+
 const wsend = o => S.ws && S.ws.readyState === 1 && S.ws.send(JSON.stringify(o));
+
 /* ========================= signalling messages ========================= */
 function onMessage(m) {
   switch (m.t) {
@@ -78,7 +93,10 @@ function onMessage(m) {
       S.mesh.addEventListener('stream', e => attachStream(e.detail.id, e.detail.stream));
       S.mesh.addEventListener('dcmsg', e => onDC(e.detail.id, e.detail.data));
       S.mesh.addEventListener('dcopen', e => {
-        if (S.wb && S.wb.strokes.length) sendInk({ ...S.wb.snapshot(), ch: 'wb' });
+        if (S.wb && S.wb.strokes.length && e.detail.dc.readyState === 'open') {
+          const msg = JSON.stringify({ p: 'board', ch: 'wb', ...S.wb.snapshot() });
+          try { e.detail.dc.send(msg); } catch {}
+        }
       });
       S.mesh.publish(S.local);
       S.gov = new QualityGovernor(S.mesh, r => hud(`${r.h}p · ${r.kbps}kbps`));
@@ -110,19 +128,20 @@ function onMessage(m) {
     case 'cmd':    return onHostCmd(m);
   }
 }
+
 function onHostCmd(m) {
   if (m.a === 'mute')   { S.mic = false; S.local.getAudioTracks().forEach(t => t.enabled = false); syncButtons(); pushState(); toast(`${m.by} muted you`); }
   if (m.a === 'camoff') { S.cam = false; S.local.getVideoTracks().forEach(t => t.enabled = false); syncButtons(); pushState(); toast(`${m.by} turned off your camera`); }
   if (m.a === 'stage-invite') toast(`${m.by} invited you to speak — unmute when ready`, 8000);
   if (m.a === 'stage-remove') { S.mic = false; S.cam = false; applyTracks(); pushState(); }
 }
+
 /* ==================== Adaptive Mesh Governor (client) ================== */
 function applyPolicy(p) {
   S.policy = p;
   if (!S.mesh) return;
   S.mesh.setQuality({ ...p.video, audioKbps: p.audioKbps, screen: S.sharing });
   S.gov.setCeiling(p.video);
-  // Constrain the actual capture so the encoder never wastes CPU.
   if (S.camTrack && !S.sharing) {
     S.camTrack.applyConstraints({
       width: { ideal: p.video.w }, height: { ideal: p.video.h }, frameRate: { ideal: p.video.fps }
@@ -131,15 +150,17 @@ function applyPolicy(p) {
   document.body.classList.toggle('lecture', p.mode === 'lecture');
   hud(`${p.mode} · ${p.n} people · ${p.video.h}p`);
 }
+
 /* ============================== peers/tiles ============================ */
 function addPeer(p, connect) {
   if (p.id === S.self.id || S.peers.has(p.id)) return;
   S.peers.set(p.id, { ...p, tile: null });
   addTile(p.id, p.name, null, false);
-  if (connect && S.mesh) S.mesh.ensure(p.id);      // triggers negotiation
+  if (connect && S.mesh) S.mesh.ensure(p.id);
   setPeerState(p.id, p.st || {});
   renderCount();
 }
+
 function removePeer(id) {
   S.mesh && S.mesh.close(id);
   const p = S.peers.get(id);
@@ -148,6 +169,7 @@ function removePeer(id) {
   if (S.focusId === id) closeFocus();
   renderCount();
 }
+
 function addTile(id, name, stream, isSelf) {
   const tile = el('div', 'tile'); tile.dataset.id = id;
   const v = el('video'); v.autoplay = true; v.playsInline = true; v.muted = isSelf;
@@ -161,13 +183,17 @@ function addTile(id, name, stream, isSelf) {
   relayout();
   return tile;
 }
+
 function attachStream(id, stream) {
   const p = S.peers.get(id); if (!p || !p.tile) return;
   const v = p.tile.querySelector('video');
   if (v.srcObject !== stream) v.srcObject = stream;
   p.tile.classList.toggle('novideo', !stream.getVideoTracks().some(t => t.readyState === 'live'));
-  if (S.focusId === id) $('#focus-video').srcObject = stream;
+  if (S.focusId === id || (p.st && p.st.screen && !S.focusId)) {
+    openFocus(id, stream);
+  }
 }
+
 function setPeerState(id, st) {
   const p = S.peers.get(id); if (!p) return;
   p.st = st;
@@ -180,24 +206,32 @@ function setPeerState(id, st) {
     (st.hand ? '✋' : '') + (st.screen ? '🖥' : '') + (st.mic ? '' : '🔇');
   if (st.screen && !S.focusId) openFocus(id);
 }
+
 function renderCount() {
   $('#b-count').textContent = S.peers.size + 1;
   if ($('#panel').dataset.kind === 'people') renderPeople();
 }
+
 function relayout() {
   const n = $('#grid').children.length;
   const cols = n <= 1 ? 1 : n <= 4 ? 2 : n <= 9 ? 3 : 4;
   $('#grid').style.setProperty('--cols', cols);
 }
+
 /* ============================ local media ============================== */
-function applyTracks() {
+async function applyTracks() {
   S.local.getAudioTracks().forEach(t => t.enabled = S.mic);
-  S.local.getVideoTracks().forEach(t => t.enabled = S.cam && !S.sharing);
+  if (!S.sharing) {
+    const videoTrack = S.cam ? S.camTrack : null;
+    if (S.mesh) await S.mesh.replaceVideo(videoTrack);
+  }
   syncButtons();
 }
+
 function pushState() {
   wsend({ t: 'state', mic: S.mic, cam: S.cam || S.sharing, screen: S.sharing, hand: S.hand, speaking: S.speaking });
 }
+
 function syncButtons() {
   $('#b-mic').classList.toggle('off', !S.mic);
   $('#b-cam').classList.toggle('off', !S.cam);
@@ -205,6 +239,7 @@ function syncButtons() {
   $('#b-hand').classList.toggle('on', S.hand);
   $('#b-draw').classList.toggle('on', S.drawing);
 }
+
 async function toggleShare() {
   if (S.sharing) {
     S.screenTrack && S.screenTrack.stop();
@@ -228,6 +263,7 @@ async function toggleShare() {
     toast('Sharing your screen. Tap ✏️ to annotate live.');
   } catch { /* user cancelled */ }
 }
+
 /* =========================== focus + annotation ======================== */
 function openFocus(id, stream) {
   S.focusId = id;
@@ -238,22 +274,27 @@ function openFocus(id, stream) {
   $('#focus').hidden = false;
   S.ink && S.ink.resize();
 }
+
 function closeFocus() { S.focusId = null; $('#focus').hidden = true; setDraw(false); }
+
 function initBoards() {
   S.ink = new Board($('#ink'), { onStroke: s => sendInk({ ...s, ch: 'ink' }) });
   S.wb  = new Board($('#wb-ink'), { onStroke: s => sendInk({ ...s, ch: 'wb' }) });
 }
+
 function sendInk(msg) {
   if (msg.s) msg.s.by = S.self.id;
   msg.by = msg.by || S.self.id;
-  S.mesh.broadcastDC({ p: 'board', ...msg });   // data-channel only: zero server bytes
+  S.mesh.broadcastDC({ p: 'board', ...msg });
 }
+
 function onDC(from, data) {
-  if (typeof data !== 'string') return;         // (binary reserved for file transfer)
+  if (typeof data !== 'string') return;
   let m; try { m = JSON.parse(data); } catch { return; }
   if (m.p !== 'board') return;
   (m.ch === 'wb' ? S.wb : S.ink).remote(m);
 }
+
 function setDraw(on) {
   S.drawing = on;
   S.ink.enabled = on && !$('#focus').hidden;
@@ -263,12 +304,14 @@ function setDraw(on) {
   $('#palette').hidden = !on;
   syncButtons();
 }
+
 /* ================================ chat ================================= */
 function pushChat(m, silent) {
   S.chat.push(m);
   if ($('#panel').dataset.kind === 'chat') renderChat();
   else if (!silent) { S.unread++; $('#b-chat').dataset.badge = S.unread; toast(`${m.name}: ${m.text.slice(0, 60)}`); }
 }
+
 function renderChat() {
   const b = $('#panel-body'); b.innerHTML = '';
   for (const c of S.chat) {
@@ -279,6 +322,7 @@ function renderChat() {
   b.scrollTop = b.scrollHeight;
   S.unread = 0; delete $('#b-chat').dataset.badge;
 }
+
 /* ============================ people / host ============================ */
 function renderPeople() {
   const b = $('#panel-body'); b.innerHTML = '';
@@ -312,15 +356,17 @@ function renderPeople() {
     b.append(tools);
   }
 }
+
 function renderLobby(waiting) {
   if (!waiting.length) return;
   waiting.forEach(w => {
-    const t = toast(`${w.name} wants to join`, 30000, [
+    toast(`${w.name} wants to join`, 30000, [
       ['Admit', () => wsend({ t: 'host', a: 'admit', id: w.id })],
       ['Deny', () => wsend({ t: 'host', a: 'deny', id: w.id })]
     ]);
   });
 }
+
 /* ================================= UI ================================== */
 function panel(kind, title) {
   const p = $('#panel');
@@ -329,6 +375,7 @@ function panel(kind, title) {
   $('#chat-form').hidden = kind !== 'chat';
   kind === 'chat' ? renderChat() : renderPeople();
 }
+
 function bindUI() {
   $('#b-mic').onclick = () => { S.mic = !S.mic; applyTracks(); pushState(); };
   $('#b-cam').onclick = () => { S.cam = !S.cam; applyTracks(); pushState(); };
@@ -371,6 +418,7 @@ function bindUI() {
   startVAD();
   addEventListener('beforeunload', () => { try { S.ws.close(); } catch {} });
 }
+
 /* --------- local voice activity: 1 tiny WS message, no server CPU -------- */
 function startVAD() {
   const a = S.local.getAudioTracks()[0]; if (!a) return;
@@ -379,13 +427,14 @@ function startVAD() {
   const an = ctx.createAnalyser(); an.fftSize = 512; src.connect(an);
   const buf = new Uint8Array(an.frequencyBinCount);
   let last = false;
-  setInterval(() => {
+  S.vadTimer = setInterval(() => {
     an.getByteFrequencyData(buf);
     const avg = buf.reduce((x, y) => x + y, 0) / buf.length;
     const speaking = S.mic && avg > 22;
     if (speaking !== last) { last = speaking; S.speaking = speaking; pushState(); }
   }, 500);
 }
+
 /* ------------------------------- helpers -------------------------------- */
 function toast(msg, ms = 4000, actions) {
   const t = el('div', 'toast', msg);
@@ -396,18 +445,23 @@ function toast(msg, ms = 4000, actions) {
   setTimeout(() => t.remove(), ms);
   return t;
 }
+
 const hud = txt => $('#hud').textContent = txt;
+
 function flyReaction(id, e) {
   const p = id === S.self.id ? null : S.peers.get(id);
   const n = el('div', 'reaction', e);
   (p && p.tile ? p.tile : document.body).append(n);
   setTimeout(() => n.remove(), 2500);
 }
+
 /* ===================== client-side recording (local) ==================== */
 function leaveNow() {
+  if (S.vadTimer) clearInterval(S.vadTimer);
   try { S.ws.close(); S.mesh.destroy(); } catch {}
   location.href = '/';
 }
+
 function toggleRecord() {
   if (S.rec) { S.rec.stop(); return; }
   S.rec = new Recorder({
@@ -432,11 +486,10 @@ function toggleRecord() {
   }
   $('#b-rec').classList.add('on', 'recing');
   toast('Recording started — the file saves to YOUR device, not the server.', 6000);
-  // Transparency: everyone in the room is told, in chat, that recording is on.
   wsend({ t: 'chat', text: `⏺ ${S.self.name} started recording this meeting (saved locally).` });
 }
+
 function recLayout() {
-  // Spotlight / screen-share active → record just that surface.
   if (!$('#focus').hidden) {
     return [{ video: $('#focus-video'), label: $('#focus-label').textContent, mirror: false }];
   }
@@ -450,6 +503,7 @@ function recLayout() {
   });
   return cells;
 }
+
 function recAudioTracks() {
   const out = [...S.local.getAudioTracks()];
   if (S.mesh) for (const p of S.mesh.peers.values()) out.push(...p.stream.getAudioTracks());
