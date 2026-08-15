@@ -1,20 +1,65 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · PicoMeet</title>
-<link rel="stylesheet" href="/css/app.css"></head><body>
-<div class="gate"><div class="card">
-  <h1 class="logo">Pico<span>Meet</span></h1>
-  <label>Username<input id="u" autocomplete="username"></label>
-  <label>Password<input id="p" type="password" autocomplete="current-password"></label>
-  <button class="primary" id="go">Sign in</button>
-  <p class="err" id="e"></p>
-</div></div>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · PicoMeet</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    .notice {
+      background: #1f2630;
+      border: 1px solid var(--line);
+      border-left: 4px solid #d29922;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: var(--fg);
+    }
+  </style>
+</head>
+<body>
+<div class="gate">
+  <div class="card">
+    <h1 class="logo">Pico<span>Meet</span></h1>
+    <div id="notice-box" class="notice" hidden></div>
+    <label>Username<input id="u" autocomplete="username"></label>
+    <label>Password<input id="p" type="password" autocomplete="current-password"></label>
+    <button class="primary" id="go">Sign in</button>
+    <p class="err" id="e"></p>
+  </div>
+</div>
 <script>
-document.getElementById('go').onclick=async()=>{
-  const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username:u.value,password:p.value})});
-  const j=await r.json();
-  if(j.error) return document.getElementById('e').textContent=j.error;
-  location.href = j.user.role==='admin' ? '/admin.html' : '/dashboard.html';
-};
-document.getElementById('p').addEventListener('keydown',e=>e.key==='Enter'&&go.click());
-</script></body></html>
+  const params = new URLSearchParams(location.search);
+  const msg = params.get('msg');
+  if (msg) {
+    const box = document.getElementById('notice-box');
+    box.textContent = msg;
+    box.hidden = false;
+  }
+
+  document.getElementById('go').onclick = async () => {
+    document.getElementById('e').textContent = '';
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u.value, password: p.value })
+    });
+    const j = await r.json();
+    if (j.error) return document.getElementById('e').textContent = j.error;
+
+    // Check if user was redirected from a restricted meeting
+    const redirect = sessionStorage.getItem('pm_redirect');
+    if (redirect) {
+      sessionStorage.removeItem('pm_redirect');
+      location.href = redirect;
+      return;
+    }
+
+    location.href = j.user.role === 'admin' ? '/admin.html' : '/dashboard.html';
+  };
+
+  document.getElementById('p').addEventListener('keydown', e => e.key === 'Enter' && go.click());
+</script>
+</body>
+</html>
